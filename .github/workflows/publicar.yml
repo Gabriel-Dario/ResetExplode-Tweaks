@@ -1,11 +1,7 @@
 name: Publicar
 
-# A cada push na main, gera o ResetExplode.exe e atualiza a release "latest" (sempre a versão mais nova).
-# Ao criar uma tag (ex.: v0.12), gera também uma release fixa dessa versão.
+# Publicação explícita pelo mantenedor; push comum somente verifica o código.
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -25,6 +21,12 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Verificar recuperação
+        run: dotnet run --project tests/ResetExplode.Advisor.Tests.csproj -c Release
+
+      - name: Verificar interface
+        run: dotnet run --project tests/UiSmoke/ResetExplode.UiSmoke.csproj -c Release
+
       - name: Publicar (arquivo único, com o .NET embutido)
         run: dotnet publish ResetExplode.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o dist -nologo
 
@@ -32,22 +34,14 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item LEIA-ME.txt dist/LEIA-ME.txt
-          Compress-Archive -Path dist/ResetExplode.exe, dist/LEIA-ME.txt -DestinationPath ResetExplode.zip
+          Copy-Item LICENSE dist/LICENSE
+          Copy-Item README.md dist/README.md
+          Compress-Archive -Path dist/ResetExplode.exe, dist/LEIA-ME.txt, dist/LICENSE, dist/README.md -DestinationPath ResetExplode.zip
 
-      - name: Atualizar release "latest"
-        if: startsWith(github.ref, 'refs/heads/')
+      - name: Criar release versionada
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $sha = "$env:GITHUB_SHA".Substring(0, 7)
-          gh release delete latest --cleanup-tag --yes
-          gh release create latest ResetExplode.zip dist/ResetExplode.exe --target $env:GITHUB_SHA --latest --title "RESET EXPLODE (versão mais recente)" --notes-file NOVIDADES.md
-
-      - name: Release da versão (tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create $env:GITHUB_REF_NAME ResetExplode.zip dist/ResetExplode.exe --title "RESET EXPLODE $env:GITHUB_REF_NAME" --generate-notes --latest=false
+          $version = ([xml](Get-Content ResetExplode.csproj -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+          gh release create "v$version" ResetExplode.zip dist/ResetExplode.exe --target $env:GITHUB_SHA --title "ResetExplode Tweaks v$version" --notes-file README.md

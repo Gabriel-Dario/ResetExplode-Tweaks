@@ -1,0 +1,57 @@
+<UserControl x:Class="ResetExplode.PerformanceAdvisorView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24,8,24,20">
+            <TextBlock Text="SEU PC, SEU PERFIL" Style="{StaticResource Label}"/>
+            <TextBlock Text="Otimizações para o seu PC" Style="{StaticResource H1}"/>
+            <TextBlock Text="Analise, meça e ajuste uma coisa por vez. Cada recomendação mostra o motivo e como voltar."
+                       Style="{StaticResource Sub}" TextWrapping="Wrap" Margin="0,4,0,18"/>
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,14">
+                <StackPanel>
+                    <DockPanel>
+                        <Button x:Name="ScanButton" Content="ANALISAR PC" Style="{StaticResource PrimaryButton}" VerticalAlignment="Center" DockPanel.Dock="Right" Click="Scan_Click" Margin="12,0,0,0"/>
+                        <StackPanel>
+                            <TextBlock Text="HARDWARE E COMPATIBILIDADE" Style="{StaticResource Label}"/>
+                            <TextBlock x:Name="HardwareText" Text="Clique em Analisar PC para montar o perfil de hardware." Foreground="{DynamicResource Fg}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock x:Name="InventoryNote" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0" FontSize="12"/>
+                </StackPanel>
+            </Border>
+            <WrapPanel Margin="0,0,0,14">
+                <RadioButton x:Name="ProfileGaming" Content="JOGOS" Style="{StaticResource Chip}" GroupName="AdvisorProfile" Tag="Jogos" IsChecked="True" Checked="Profile_Checked"/>
+                <RadioButton x:Name="ProfileProductivity" Content="PRODUTIVIDADE" Style="{StaticResource Chip}" GroupName="AdvisorProfile" Tag="Produtividade" Checked="Profile_Checked"/>
+                <RadioButton x:Name="ProfileBalanced" Content="EQUILÍBRIO" Style="{StaticResource Chip}" GroupName="AdvisorProfile" Tag="Equilibrio" Checked="Profile_Checked"/>
+            </WrapPanel>
+            <Border Style="{StaticResource CardBorder}" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="MEDIÇÃO ANTES E DEPOIS" Style="{StaticResource Label}"/>
+                    <TextBlock Text="Observe 30 s da mesma carga. Para jogos, use a mesma cena, resolução e qualidade e deixe o jogo em primeiro plano. Esta observação não inicia um stress test."
+                               Foreground="{DynamicResource Muted}" TextWrapping="Wrap" FontSize="12"/>
+                    <TextBox x:Name="WorkloadText" Margin="0,12,0,10" Text="Minha carga · informe aplicativo/cena, resolução e preset" ToolTip="Use exatamente a mesma descrição nas sessões que pretende comparar."/>
+                    <WrapPanel>
+                        <Button x:Name="MeasureButton" Content="OBSERVAR 30 S" Style="{StaticResource PrimaryButton}" Click="Measure_Click" Margin="0,0,8,8"/>
+                        <Button x:Name="BaselineButton" Content="SALVAR REFERÊNCIA" Style="{StaticResource OutlineButton}" Click="Baseline_Click" IsEnabled="False" Margin="0,0,8,8"/>
+                        <Button Content="BENCHMARKS" Style="{StaticResource OutlineButton}" Tag="bench" Click="Navigate_Click" Margin="0,0,8,8"/>
+                        <Button Content="SESSÃO DE GARGALO" Style="{StaticResource OutlineButton}" Tag="bottleneck" Click="Navigate_Click" Margin="0,0,8,8"/>
+                        <Button Content="EXPORTAR RELATÓRIO" Style="{StaticResource OutlineButton}" Click="Export_Click" Margin="0,0,8,8"/>
+                    </WrapPanel>
+                    <ProgressBar x:Name="MeasureProgress" Height="4" Maximum="30" Margin="0,6,0,12"/>
+                    <TextBlock x:Name="MeasurementText" Text="Sem medição. Temperaturas e FPS indisponíveis serão mostrados como não medidos."
+                               Foreground="{DynamicResource Fg}" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="ComparisonText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="12"/>
+                </StackPanel>
+            </Border>
+            <DockPanel Margin="0,0,0,10">
+                <Button x:Name="RestoreButton" Content="RESTAURAR AJUSTES" Style="{StaticResource OutlineButton}" DockPanel.Dock="Right" Click="RestoreAll_Click"/>
+                <TextBlock x:Name="RecommendationsTitle" Text="RECOMENDAÇÕES" Style="{StaticResource Label}" VerticalAlignment="Center"/>
+            </DockPanel>
+            <TextBlock x:Name="OperationText" Foreground="{DynamicResource Fg}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+            <StackPanel x:Name="Cards"/>
+            <Expander Header="Histórico de mudanças e medições" Foreground="{DynamicResource Fg}" Margin="0,12,0,0">
+                <TextBlock x:Name="HistoryText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="10" FontSize="12"/>
+            </Expander>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

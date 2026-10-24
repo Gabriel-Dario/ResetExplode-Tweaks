@@ -171,7 +171,7 @@
                                 <TextBlock x:Name="SideStress" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="parado" FontFamily="{StaticResource Mono}" FontSize="12" Margin="0,3"/>
                             </Grid>
                         </Border>
-                        <TextBlock x:Name="SideVersion" Text="v0.16" Foreground="{DynamicResource Faint}" FontSize="11" Margin="4,10,0,0"/>
+                        <TextBlock x:Name="SideVersion" Text="v0.18 · tweaks" Foreground="{DynamicResource Faint}" FontSize="11" Margin="4,10,0,0"/>
                     </StackPanel>
 
                     <!-- Navegação por categorias -->
@@ -272,6 +272,18 @@
                             </StackPanel>
                             <ToggleButton x:Name="GrpTools" Style="{StaticResource NavGroup}" Content="RESET FERRAMENTAS"/>
                             <StackPanel x:Name="GrpToolsItems" Margin="10,0,0,4" Visibility="{Binding IsChecked, ElementName=GrpTools, Converter={StaticResource BoolVis}}">
+                            <RadioButton x:Name="NavAdvisor" Style="{StaticResource NavItem}" Tag="PageAdvisor" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE713;" FontFamily="{StaticResource Icons}" FontSize="14" Width="28" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Seu PC · ajustes" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="NavTweaks" Style="{StaticResource NavItem}" Tag="PageTweaks" Checked="Nav_Checked">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE713;" FontFamily="{StaticResource Icons}" FontSize="14" Width="28" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Tweaks · catálogo" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
                             <RadioButton x:Name="NavOptimize" Style="{StaticResource NavItem}" Tag="PageOptimize" Checked="Nav_Checked">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE9F3;" FontFamily="{StaticResource Icons}" FontSize="14" Width="28" VerticalAlignment="Center"/>
@@ -327,6 +339,8 @@
             <Grid Grid.Row="1" Grid.Column="1">
 
                 <!-- ===== VISÃO GERAL (painel) ===== -->
+                <local:PerformanceAdvisorView x:Name="PageAdvisor" Visibility="Collapsed"/>
+                <local:TweakCatalogView x:Name="PageTweaks" Visibility="Collapsed"/>
                 <ScrollViewer x:Name="PageDash" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="20,6,24,20">
 
@@ -2084,7 +2098,7 @@
                                     </Grid>
                                     <TextBlock Foreground="{DynamicResource Muted}" TextWrapping="Wrap">
                                         Um clique: limpa a memória em espera e fecha os programas marcados na lista abaixo.
-                                        Use antes de abrir um jogo.
+                                        Memória em cache é útil: limpar RAM não garante mais desempenho. Feche apenas o que você escolher.
                                     </TextBlock>
                                     <TextBlock x:Name="OptResult" TextWrapping="Wrap" Margin="0,10,0,0"/>
                                 </StackPanel>

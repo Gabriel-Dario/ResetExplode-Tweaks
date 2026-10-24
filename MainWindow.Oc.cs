@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -147,11 +147,13 @@ public partial class MainWindow
 
     private void BtnOcApply_Click(object sender, RoutedEventArgs e)
     {
+        if(AnyBenchRunning || TestRunning) {OcGpuResult.Text="Conclua a medição ou teste antes de alterar energia/clocks.";return;}
         nint ocGpu = OcGpu;
         if (ocGpu == IntPtr.Zero || !RequireAdmin())
         {
             return;
         }
+        if(MessageBox.Show("Aplicar os limites de energia/clock selecionados para esta GPU? Isso pode alterar temperatura, consumo e estabilidade. Confirme o suporte do modelo e teste uma mudança por vez.","Ajuste avançado de GPU",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes) return;
         List<string> list = new List<string>();
         int code = Nvml.SetPowerLimitMw(ocGpu, (uint)(OcPower.Value * 1000.0));
         string text = Nvml.Explain(code);
@@ -194,6 +196,7 @@ public partial class MainWindow
 
     private void BtnOcReset_Click(object sender, RoutedEventArgs e)
     {
+        if(AnyBenchRunning || TestRunning) {OcGpuResult.Text="Conclua a medição ou teste antes de restaurar energia/clocks.";return;}
         nint ocGpu = OcGpu;
         if (ocGpu == IntPtr.Zero || !RequireAdmin())
         {
@@ -448,7 +451,7 @@ public partial class MainWindow
         }
         bool flag4 = fail == null;
         OcStatus.Text = $"Concluído em {DateTime.Now - start:mm\\:ss}.";
-        OcVerdict.Text = (flag4 ? "ESTÁVEL" : "INSTÁVEL");
+        OcVerdict.Text = (flag4 ? "SEM ERROS NO TESTE" : "ERROS NO TESTE");
         OcVerdictWhy.Text = (flag4 ? $"Nenhum erro em {duration.TotalMinutes:0} min de stress. Para Curve Optimizer, use o PC normalmente por um dia e confira os erros recentes." : ("Motivo: " + fail + ". Volte um passo no ajuste e teste de novo."));
         OcVerdictCard.Background = (flag4 ? Card : Fg);
         TextBlock ocVerdict = OcVerdict;
@@ -527,35 +530,20 @@ public partial class MainWindow
 
     private void BuildOcGuide()
     {
-        (string Maker, string Model) tuple = OcCheck.Motherboard();
-        string item = tuple.Maker;
-        string item2 = tuple.Model;
-        bool flag = item.Contains("Gigabyte", StringComparison.OrdinalIgnoreCase);
-        bool flag2 = item.Contains("ASUS", StringComparison.OrdinalIgnoreCase);
-        bool flag3 = item.Contains("Micro-Star", StringComparison.OrdinalIgnoreCase) || item.Contains("MSI", StringComparison.OrdinalIgnoreCase);
-        string text = GameCatalog.ShortCpuName(_cpuName);
-        bool num = _cpuName.Contains("Ryzen", StringComparison.OrdinalIgnoreCase);
-        string text2 = ((flag ? "Gigabyte" : (item.Split(' ').FirstOrDefault() ?? "")) + " " + item2).Trim();
-        OcGuideTitle.Text = "GUIA: OVERCLOCK NA BIOS · " + text2.ToUpperInvariant() + " · " + text.ToUpperInvariant();
-        OcGuideIntro.Text = "Faça uma mudança por vez e rode o verificador depois de cada uma. Os menus podem mudar um pouco com a versão da BIOS. Valores são pontos de partida seguros, não garantia: cada chip é diferente.";
-        string text3 = (flag ? "Tweaker → Advanced CPU Settings → Precision Boost Overdrive  (ou Settings → AMD Overclocking)" : (flag2 ? "Advanced → AMD Overclocking → Precision Boost Overdrive  (ou AI Tweaker → PBO)" : (flag3 ? "OC → Advanced CPU Configuration → AMD Overclocking → Precision Boost Overdrive" : "Advanced → AMD Overclocking → Precision Boost Overdrive")));
-        string where = (flag ? "Tweaker → Extreme Memory Profile (X.M.P.) → EXPO1" : (flag2 ? "AI Tweaker → Ai Overclock Tuner → EXPO I" : (flag3 ? "OC → A-XMP/EXPO → Profile 1" : "procure EXPO / XMP no menu de memória")));
-        List<GuideStep> list = new List<GuideStep>
+        var board = OcCheck.Motherboard();
+        var hardware = new AdvisorHardware { Cpu = _cpuName, Board = (board.Maker + " " + board.Model).Trim() };
+        OcGuideTitle.Text = "GUIA DE BIOS · " + hardware.Board.ToUpperInvariant();
+        OcGuideIntro.Text = "Orientações condicionadas ao modelo. Confirme suporte no manual da placa/CPU; o aplicativo não aplica valores de BIOS automaticamente.";
+        OcGuide.ItemsSource = new List<GuideStep>
         {
-            new GuideStep("0", "Antes de começar", flag ? "Save & Exit → Save Profiles" : "Save & Exit → Save Profile", "Salve o perfil atual da BIOS. Se o PC não ligar depois de um ajuste, espere 3 tentativas (muitas placas voltam sozinhas) ou limpe a CMOS (jumper CLR_CMOS na placa ou tirando a bateria por 1 minuto)."),
-            new GuideStep("1", "Ative o perfil da memória (EXPO)", where, "É o maior ganho em jogos para a maioria dos PCs: a RAM sai do padrão lento e vai para a velocidade da etiqueta. Teste: verificador \"CPU + RAM\" por 15 min (o teste de RAM acusa erro se o perfil não for estável).")
+            new("0", "Preparar uma referência e recuperação", "Manual do fabricante do modelo e da versão de BIOS",
+                "Salve suas configurações atuais e o procedimento de recuperação oficial. Meça a configuração atual antes de mudar algo. Não use tensões, limites ou clocks de outro PC."),
+            new("1", "Memória: XMP/EXPO quando compatível", "Menu de memória indicado no manual",
+                PerformanceAdvisor.MemoryGuide(hardware)),
+            new("2", "Boost, energia, térmica e undervolt", "Menu específico da plataforma",
+                PerformanceAdvisor.CpuGuide(hardware)),
+            new("3", "Validar depois da mudança", "Verificação de estabilidade e uso real",
+                "Altere um parâmetro por vez. Verifique carga pesada e uso leve, WHEA, erros de RAM e resets de driver. Passar no teste só comprova que não foram observados erros naquele intervalo. Restaure ao detectar instabilidade.")
         };
-        if (num)
-        {
-            list.Add(new GuideStep("2", "Precision Boost Overdrive (PBO)", text3, "Precision Boost Overdrive → Advanced. PBO Limits → Motherboard. Isso libera os limites de energia para o boost durar mais. Teste com o verificador."));
-            list.Add(new GuideStep("3", "Curve Optimizer (undervolt da CPU)", text3 + " → Curve Optimizer", "All Cores → Negative → 10. Teste. Se passar, tente 15, 20, 25… até falhar; volte 5 a partir de onde falhou. No " + text + " costuma ficar entre -15 e -30. Instabilidade de Curve Optimizer aparece muito em uso leve: use o PC normalmente por um dia e veja \"Erros de hardware recentes\" aqui — erro WHEA = volte um passo."));
-            list.Add(new GuideStep("4", "Max CPU Boost Clock Override (opcional)", text3, "Depois do Curve Optimizer estável: +100 MHz, teste; depois +200 MHz. Ganho pequeno; pode exigir reduzir o Curve Optimizer."));
-            list.Add(new GuideStep("5", "Alternativa fria: Eco Mode", text3 + " → Eco Mode", "Em vez de mais desempenho: limita a CPU a 65 W (ou 105 W). Perde ~5–10% em tarefas pesadas multi-core, quase nada em jogos, e roda bem mais frio e silencioso."));
-        }
-        else
-        {
-            list.Add(new GuideStep("2", "Processador Intel", "Tweaker / Ai Tweaker / OC → CPU", "Para Intel, prefira undervolt (offset negativo de tensão) e limites de energia (PL1/PL2) em vez de aumentar multiplicadores. Teste cada passo com o verificador."));
-        }
-        OcGuide.ItemsSource = list;
     }
 }

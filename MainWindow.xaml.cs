@@ -64,6 +64,7 @@ public partial class MainWindow : Window
     private List<BackgroundApp> _apps = new();
     private readonly List<Tweak> _tweaks = WindowsTweaks.All(); // só as definições; o estado é lido ao abrir a página
     private bool _optInit;
+    private bool _tweakBusy;
 
     // Stress de GPU (estilo FurMark)
     private readonly GpuBurn _burn = new();
@@ -77,7 +78,7 @@ public partial class MainWindow : Window
     private Brush Muted => (Brush)FindResource("Muted");
     private Brush Card => (Brush)FindResource("Card");
 
-    public MainWindow()
+    public MainWindow(bool preview = false)
     {
         InitializeComponent();
         ThemeManager.Apply(_settings.LightTheme);
@@ -86,6 +87,12 @@ public partial class MainWindow : Window
 
         // Sensores: a lista começa vazia e é preenchida quando a detecção do hardware termina (LoadHardwareAsync).
         _monitor = new SensorMonitor();
+        PageAdvisor.Configure(_settings, _tweaks, NavigateAdvisor,
+            () => BenchRunning || _gameBenchRunning || TestRunning || _ocRunning || _tweakBusy || PageTweaks.IsBusy,
+            () => BottleneckAnalyzer.Sample(_monitor, _gpu ?? _gpus.FirstOrDefault(), null),
+            () => { _frames.Start(); return _frames.GetForegroundStats(); },
+            () => _gpu?.Name ?? _gpus.FirstOrDefault()?.Name ?? "");
+        PageTweaks.Configure(_settings, _tweaks, () => BenchRunning || _gameBenchRunning || TestRunning || _ocRunning || _tweakBusy || PageAdvisor.IsBusy);
         _view = CollectionViewSource.GetDefaultView(_monitor.Rows);
         _view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SensorRow.Hardware)));
         SensorGrid.ItemsSource = _view;
@@ -93,13 +100,12 @@ public partial class MainWindow : Window
         StatusText.Text = "Detectando o hardware…";
 
         InitBench();
-        SnapshotUsb();
-        RefreshDrives();
+        if (!preview) { SnapshotUsb(); RefreshDrives(); }
         TitlePage.Text = "Visão geral";
         UpdateDashboard();
 
         // A janela aparece já; as coletas pesadas (WMI, sensores, GPU) rodam em paralelo fora da thread da janela.
-        Loaded += async (_, _) => await LoadHardwareAsync();
+        if (!preview) Loaded += async (_, _) => await LoadHardwareAsync();
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += (_, _) =>
@@ -117,7 +123,7 @@ public partial class MainWindow : Window
             if (PageBench.IsVisible) UpdateBenchLive();
             if (PageOptimize.IsVisible) UpdateRamStatus();
         };
-        _timer.Start();
+        if (!preview) _timer.Start();
 
         StateChanged += (_, _) =>
         {
@@ -129,6 +135,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _timer.Stop(); _overlayTimer?.Stop();
+            PageAdvisor.CancelObservation();
             _stress.Stop(); _burn.Stop(); _benchCts?.Cancel();
             _overlay?.Close();
             _toast?.Close();
@@ -280,16 +287,27 @@ public partial class MainWindow : Window
             case "PageMakerPorts": ScanUsb(); break;
             case "PageMakerDrv": InitMakerDrivers(); break;
             case "PageOptimize": InitOptimize(); break;
+            case "PageAdvisor": PageAdvisor.OnOpen(); break;
+            case "PageTweaks": PageTweaks.OnOpen(); break;
         }
     }
 
     private void ShowPage(string name)
     {
-        foreach (var p in new FrameworkElement[] { PageDash, PageSystem, PageSensors, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
+        foreach (var p in new FrameworkElement[] { PageTweaks, PageAdvisor, PageDash, PageSystem, PageSensors, PageGpu, PageGames, PageBottleneck, PageOverlay, PageBench, PageOptimize, PageOc, PageInteg, PageLauncher, PageDriver, PageStartup, PageApps, PageMakerPorts, PageMakerDrv, PageDisks, PageEnergy, PageNet, PageStress })
             p.Visibility = p.Name == name ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ---------------- Sistema ----------------
+    private void NavigateAdvisor(string target)
+    {
+        RadioButton? navigation = target switch {
+            "sensors" => NavSensors, "optimize" => NavTweaks, "startup" => NavStartup,
+            "games" => NavGames, "drivers" => NavDriver, "disks" => NavDisks,
+            "oc" => NavOc, "bench" => NavBench, "bottleneck" => NavBottleneck, _ => null
+        };
+        if (navigation != null) navigation.IsChecked = true;
+    }
 
     private void InfoCategories_Changed(object sender, SelectionChangedEventArgs e)
     {
@@ -696,7 +714,7 @@ public partial class MainWindow : Window
     private async void BtnBench_Click(object sender, RoutedEventArgs e)
     {
         if (BenchRunning) { _benchCts!.Cancel(); return; }
-        if (TestRunning || _gameBenchRunning) { BenchHint.Text = "Pare o outro teste antes de rodar o benchmark."; return; }
+        if (TestRunning || AnyBenchRunning) { BenchHint.Text = "Pare o outro teste ou ajuste antes de rodar o benchmark."; return; }
 
         string mode = CheckedTag(BenchModePanel) ?? "both";
         bool sustained = CheckedTag(BenchDurationPanel) == "10";
@@ -831,10 +849,10 @@ public partial class MainWindow : Window
         if (!_optInit)
         {
             _optInit = true;
-            foreach (var t in _tweaks)
-                try { t.Refresh(); } catch (Exception ex) { t.Status = $"Não foi possível ler: {ex.Message}"; }
             OptTweaks.ItemsSource = _tweaks;
         }
+        foreach (var t in _tweaks)
+            try { t.Refresh(); } catch (Exception ex) { t.Status = $"Não foi possível ler: {ex.Message}"; }
         RefreshApps();
         UpdateRamStatus();
     }
@@ -858,6 +876,7 @@ public partial class MainWindow : Window
 
     private async void BtnOptimize_Click(object sender, RoutedEventArgs e)
     {
+        if(AnyBenchRunning || TestRunning) {OptResult.Text="Conclua o teste ou ajuste em andamento primeiro.";return;}
         var toClose = _apps.Where(a => a.Selected).ToList();
         string list = toClose.Count == 0 ? "nenhum programa marcado"
                                          : string.Join("\n", toClose.Select(a => $"  • {a.Title}"));
@@ -871,29 +890,37 @@ public partial class MainWindow : Window
         BtnOptimize.IsEnabled = false;
         BtnOptimize.Content = "OTIMIZANDO…";
         OptResult.Text = "";
-        var closeResult = await Task.Run(() => Optimizer.CloseApps(toClose));
-        var mem = await Task.Run(Optimizer.CleanMemory); // depois de fechar, para contar a memória liberada por eles também
-        BtnOptimize.IsEnabled = true;
-        BtnOptimize.Content = "RESET OTIMIZA";
-
-        var parts = new List<string> { $"Memória liberada: {mem.FreedBytes / 1048576.0:N0} MB" };
-        parts.Add(mem.StandbyPurged ? "memória em espera limpa" : $"memória em espera não limpa ({mem.StandbyError})");
-        if (closeResult.Closed.Count > 0) parts.Add($"fechados: {string.Join(", ", closeResult.Closed)}");
-        if (closeResult.NotClosed.Count > 0)
-            parts.Add($"não fecharam (podem ter algo não salvo ou pedir confirmação): {string.Join(", ", closeResult.NotClosed)}");
-        OptResult.Text = string.Join(" · ", parts) + ".";
-        RefreshApps();
-        UpdateRamStatus();
-    }
-
-    private void Tweak_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not CheckBox { Tag: Tweak t } box) return;
-        bool turnOn = box.IsChecked == true;
+        _tweakBusy=true;
         try
         {
-            t.Write(turnOn, _settings);
-            _settings.Save();
+            var closeResult = await Task.Run(() => Optimizer.CloseApps(toClose));
+            var mem = await Task.Run(Optimizer.CleanMemory); // depois de fechar, para contar a memória liberada por eles também
+
+            var parts = new List<string> { $"Memória liberada: {mem.FreedBytes / 1048576.0:N0} MB" };
+            parts.Add(mem.StandbyPurged ? "memória em espera limpa" : $"memória em espera não limpa ({mem.StandbyError})");
+            if (closeResult.Closed.Count > 0) parts.Add($"fechados: {string.Join(", ", closeResult.Closed)}");
+            if (closeResult.NotClosed.Count > 0)
+                parts.Add($"não fecharam (podem ter algo não salvo ou pedir confirmação): {string.Join(", ", closeResult.NotClosed)}");
+            OptResult.Text = string.Join(" · ", parts) + ".";
+            RefreshApps();
+            UpdateRamStatus();
+        }
+        catch(Exception ex) { OptResult.Text="Falha na otimização: "+ex.Message; }
+        finally { _tweakBusy=false; BtnOptimize.IsEnabled=true; BtnOptimize.Content="RESET OTIMIZA"; }
+    }
+
+    private async void Tweak_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { Tag: Tweak t } box) return;
+        if (PageAdvisor.IsBusy || AnyBenchRunning || TestRunning || _ocRunning) { box.IsChecked=t.IsOn; t.Status="Conclua o teste ou ajuste em andamento primeiro."; return; }
+        bool turnOn = box.IsChecked == true;
+        _tweakBusy=true;
+        OptTweaks.IsEnabled=false;
+        try
+        {
+            if (t.Id == "hags" && MessageBox.Show("Confirme se o agendamento de GPU é suportado nas Configurações do Windows/driver. Alterar o registro sozinho não comprova suporte. Aplicar o valor escolhido e reiniciar depois?", "HAGS", MessageBoxButton.YesNo) != MessageBoxResult.Yes) { box.IsChecked=t.IsOn; return; }
+            await Task.Run(() => { lock(WindowsTweaks.Gate) WindowsTweaks.Apply(t,turnOn,_settings); });
+            if (t.NeedsRestart) { _settings.AdvisorRestartBoot=(await Task.Run(()=>AdvisorHardwareCollector.Collect())).BootId; _settings.AdvisorRestartRequestedUtc=DateTime.UtcNow; _settings.Save(); }
             t.Refresh();
             t.Status = t.IsOn == turnOn
                 ? (turnOn ? "Aplicado." : "Desligado.") + (t.NeedsRestart ? " Reinicie o PC para valer." : "")
@@ -901,9 +928,10 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            t.Refresh();
+            try { t.Refresh(); } catch { }
             t.Status = $"Falhou: {ex.Message}";
         }
+        finally { _tweakBusy=false; OptTweaks.IsEnabled=true; }
         box.IsChecked = t.IsOn; // o binding é só leitura: volta ao estado real
     }
 
@@ -1012,8 +1040,9 @@ public partial class MainWindow : Window
         ScanUsb();
     }
 
-    private void BtnRestoreTweaks_Click(object sender, RoutedEventArgs e)
+    private async void BtnRestoreTweaks_Click(object sender, RoutedEventArgs e)
     {
+        if (AnyBenchRunning || TestRunning || _ocRunning || _tweakBusy) return;
         if (_settings.TweakBackup.Count == 0)
         {
             MessageBox.Show("Nenhum ajuste foi alterado pelo RESET EXPLODE ainda.", "RESET OTIMIZA",
@@ -1024,9 +1053,15 @@ public partial class MainWindow : Window
                                 "RESET OTIMIZA", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
         bool restart = _tweaks.Any(t => t.NeedsRestart && _settings.TweakBackup.ContainsKey(t.Id));
-        WindowsTweaks.RestoreAll(_tweaks, _settings);
-        foreach (var t in _tweaks) { t.Refresh(); t.Status = "Restaurado."; }
-        if (restart) MessageBox.Show("Alguns ajustes só voltam ao original depois de reiniciar o PC.", "RESET OTIMIZA");
+        _tweakBusy=true; OptTweaks.IsEnabled=false;
+        try {
+            await Task.Run(()=> { lock(WindowsTweaks.Gate) WindowsTweaks.RestoreAll(_tweaks,_settings); });
+            foreach (var t in _tweaks) { try { t.Refresh(); } catch { } }
+            if (restart) { _settings.AdvisorRestartBoot=(await Task.Run(()=>AdvisorHardwareCollector.Collect())).BootId; _settings.AdvisorRestartRequestedUtc=DateTime.UtcNow; _settings.Save(); }
+            string message=_settings.TweakBackup.Count==0?"Ajustes restaurados.":"Alguns backups permanecem: confira os erros nos ajustes e tente restaurar novamente.";
+            MessageBox.Show(message+(restart?" Reinicie o PC para concluir os ajustes que exigem reinício.":""),"RESET OTIMIZA");
+        } catch(Exception ex) { MessageBox.Show("Falha na restauração: "+ex.Message,"RESET OTIMIZA"); }
+        finally { _tweakBusy=false; OptTweaks.IsEnabled=true; }
     }
 
     // ---------------- RESET BENCH: benchmarks de jogo ----------------
@@ -1040,7 +1075,7 @@ public partial class MainWindow : Window
     private int[] _simPixels = Array.Empty<int>();
     private const int SimView = 440;
 
-    private bool AnyBenchRunning => BenchRunning || _gameBenchRunning;
+    private bool AnyBenchRunning => BenchRunning || _gameBenchRunning || _ocRunning || _tweakBusy || PageAdvisor.IsBusy || PageTweaks.IsBusy;
 
     private void BenchTest_Checked(object sender, RoutedEventArgs e)
     {
@@ -1419,6 +1454,7 @@ public partial class MainWindow : Window
 
     private void StartStress()
     {
+        if (AnyBenchRunning) { StressHint.Text="Conclua a medição ou outro teste antes de iniciar stress."; return; }
         StressHint.Text = "";
         bool cpu = ChkCpu.IsChecked == true, ram = ChkRam.IsChecked == true, gpu = ChkGpu.IsChecked == true;
         if (!cpu && !ram && !gpu) { StressHint.Text = "Ative CPU, RAM ou GPU."; return; }

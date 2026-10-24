@@ -15,6 +15,9 @@ ResetExplode-dist/
 
 # Local
 *.log
+work/*.png
+work/inventory-*.json
+work/VALIDACAO*.json
 
 # Drivers seriais embutidos (RESET MAKER): as DLLs fazem parte dos pacotes assinados
 !Drivers/**

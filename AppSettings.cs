@@ -55,6 +55,12 @@ public sealed class AppSettings
     // RESET BENCH: últimos resultados (mais recente primeiro)
     public List<BenchRun> BenchRuns { get; set; } = new();
     public List<BenchRecord> BenchRecords { get; set; } = new();
+    public string AdvisorProfile { get; set; } = "Jogos";
+    public List<AdvisorMeasurement> AdvisorMeasurements { get; set; } = new();
+    public AdvisorMeasurement? AdvisorBaseline { get; set; }
+    public List<string> AdvisorChanges { get; set; } = new();
+    public string? AdvisorRestartBoot { get; set; }
+    public DateTime? AdvisorRestartRequestedUtc { get; set; }
 
     // RESET OTIMIZA: valores originais dos ajustes do Windows antes da primeira alteração ("<ausente>" = não existia)
     public Dictionary<string, string?> TweakBackup { get; set; } = new();
@@ -110,7 +116,16 @@ public sealed class AppSettings
 
     public void Save()
     {
-        Directory.CreateDirectory(Folder);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+        lock (WindowsTweaks.Gate)
+        {
+            Directory.CreateDirectory(Folder);
+            string temporary = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(temporary, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+                File.Move(temporary, FilePath, overwrite: true);
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
     }
 }
